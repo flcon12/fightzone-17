@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ZERO17 • Agendamento de Aulas</title>
+  <meta name="color-scheme" content="light only">
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0b0b0c; color: #fff; margin: 0; padding: 24px; }
+    h1 { margin-top: 0; }
+    .card { background: #111214; padding: 20px; border-radius: 10px; max-width: 480px; margin: auto; }
+    label { display:block; margin-top: 10px; }
+    select, input, button { width: 100%; padding: 10px; margin-top: 5px; border-radius: 6px; border: none; }
+    button { background: #e50914; color: #fff; font-weight: bold; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .hidden { display: none; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 8px; border-bottom: 1px solid #333; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Agendamento</h1>
+  <label>Turma</label>
+  <select id="turmaSelect"></select>
+  <div id="vagaBox" class="hidden"><span id="vagasRestantes"></span> vagas restantes</div>
+
+  <form id="formInscricao">
+    <label>Nome</label>
+    <input id="nome" required />
+    <label>Email</label>
+    <input id="email" type="email" required />
+    <label>Telefone</label>
+    <input id="telefone" required />
+    <button id="btnReservar" type="submit">Reservar</button>
+  </form>
+  <div id="msg"></div>
+</div>
+
+<div class="card" id="adminPanel" style="margin-top:30px;">
+  <h1>Painel Admin</h1>
+  <table id="adminTable">
+    <thead><tr><th>Turma</th><th>Nome</th><th>Email</th><th>Telefone</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <button id="exportCSV">Exportar CSV</button>
+</div>
+
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const supabase = createClient("SUA_URL_SUPABASE", "SUA_CHAVE_PUBLICA");
+const MAX_VAGAS = 4;
+
+async function carregarTurmas() {
+  const { data, error } = await supabase.from("turmas").select("*").order("data", { ascending: true });
+  if (error) return;
+  const sel = document.getElementById("turmaSelect");
+  sel.innerHTML = "<option value=''>Selecione...</option>";
+  data.forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = t.id;
+    opt.textContent = `${new Date(t.data).toLocaleDateString()} - ${t.hora}`;
+    sel.appendChild(opt);
+  });
+}
+
+async function carregarVagas(turmaId) {
+  const { count } = await supabase.from("agendamentos").select("id", { count: "exact", head: true }).eq("turma_id", turmaId);
+  const vagas = MAX_VAGAS - (count || 0);
+  document.getElementById("vagasRestantes").textContent = vagas;
+  document.getElementById("vagaBox").classList.remove("hidden");
+  document.getElementById("btnReservar").disabled = vagas <= 0;
+}
+
+async function reservar(e) {
+  e.preventDefault();
+  const turmaId = document.getElementById("turmaSelect").value;
+  const nome = document.getElementById("nome").value;
+  const email = document.getElementById("email").value;
+  const telefone = document.getElementById("telefone").value;
+  const { error } = await supabase.from("agendamentos").insert([{ turma_id: turmaId, nome, email, telefone }]);
+  document.getElementById("msg").textContent = error ? "Erro" : "Reservado";
+  if (!error) { carregarVagas(turmaId); carregarAdmin(); }
+}
+
+async function carregarAdmin() {
+  const { data } = await supabase.from("agendamentos").select("turmas(data,hora), nome, email, telefone");
+  const tbody = document.querySelector("#adminTable tbody");
+  tbody.innerHTML = "";
+  data.forEach(r => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${new Date(r.turmas.data).toLocaleDateString()} ${r.turmas.hora}</td><td>${r.nome}</td><td>${r.email}</td><td>${r.telefone}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function exportarCSV() {
+  const rows = [...document.querySelectorAll("#adminTable tr")].map(tr => [...tr.children].map(td => td.innerText));
+  const csv = rows.map(r => r.join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "agendamentos.csv";
+  a.click();
+}
+
+document.getElementById("turmaSelect").addEventListener("change", e => carregarVagas(e.target.value));
+document.getElementById("formInscricao").addEventListener("submit", reservar);
+document.getElementById("exportCSV").addEventListener("click", exportarCSV);
+
+carregarTurmas();
+carregarAdmin();
+</script>
+
+</body>
+</html>
